@@ -58,7 +58,10 @@ def main():
     with tabs[0]:
         st.header("Compare Model Results Before & After Fine-tuning")
 
-        query = st.text_input("Enter a product title:", key="compare_query")
+        query = st.text_input("Enter a question:", key="compare_query")
+
+        if not query:
+            st.error("You must enter a question")
 
         col1, col2 = st.columns(2)
 

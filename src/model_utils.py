@@ -30,7 +30,7 @@ def can_use_quantization():
     # Check if all requirements are met for quantization
     return has_accelerate and torch.cuda.is_available()
 
-def load_model_and_tokenizer(model_name, device_map="auto", quantization=True):
+def load_model_and_tokenizer(model_name, device_map="cpu", quantization=True):
     """Load the foundation model and tokenizer"""
     # Get token from environment variable (set by the Streamlit app)
     hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN", None)
@@ -86,7 +86,6 @@ def standard_model_load(device_map, hf_token, model_name):
 def prepare_model_for_training(model):
     """Prepare model for training by moving parameters from meta device to actual device"""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
     # Unwrap DDP model if needed
     if hasattr(model, "module"):
         model = model.module
@@ -108,7 +107,8 @@ def setup_lora_model(model):
         r=8,
         lora_alpha=32,
         lora_dropout=0.1,
-        target_modules=["q_proj", "v_proj"]
+        target_modules=["q_proj", "o_proj", "k_proj", "v_proj",
+                        "gate_proj", "up_proj", "down_proj"]
     )
 
     if hasattr(model, 'is_quantized') and model.is_quantized:
@@ -131,28 +131,34 @@ def prepare_dataset(data):
     return Dataset.from_list(formatted_data)
 
 # Fine-tune model
-def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=3, batch_size=4):
+def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=1, batch_size=2):
     """Fine-tune the model using the prepared dataset"""
-    # Check if we have CUDA available for FP16 training
-    fp16_enabled = torch.cuda.is_available()
+    # Check if MPS (Metal Performance Shaders) is available for Apple Silicon
+    use_mps = hasattr(torch, 'mps') and torch.backends.mps.is_available()
+    device = "mps" if use_mps else "cpu"
+    print(f"Training on device: {device}")
 
     # Prepare model by moving parameters from meta device if needed
     model = prepare_model_for_training(model)
 
+    # Move model to the appropriate device
+    model.to(device)
+
+    # Configure training arguments optimized for Apple M4 Pro
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
-        gradient_accumulation_steps=4,
+        gradient_accumulation_steps=8,  # Increased for memory efficiency
         optim="adamw_torch",
         learning_rate=2e-4,
         weight_decay=0.01,
-        fp16=fp16_enabled,
-        logging_steps=50,
+        fp16=False,  # Disable fp16 for Apple Silicon
+        logging_steps=20,
         save_strategy="epoch",
-        evaluation_strategy="epoch",
-        save_total_limit=2,
-        load_best_model_at_end=True,
+        evaluation_strategy="no",  # Disable evaluation to speed up training
+        save_total_limit=1,
+        load_best_model_at_end=False,
         report_to=None
     )
 
@@ -162,7 +168,7 @@ def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=3, batch_size=
     )
 
     def tokenize_function(examples):
-        return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=512)
+        return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=256)  # Reduced length for memory efficiency
 
     tokenized_dataset = dataset.map(tokenize_function, batched=True)
 
