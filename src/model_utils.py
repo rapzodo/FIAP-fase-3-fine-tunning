@@ -1,13 +1,14 @@
-import chromadb
+import json
+import os
+
 import torch
 from datasets import Dataset
 from peft import (
     LoraConfig,
+    TaskType,
     get_peft_model,
-    prepare_model_for_kbit_training,
-    TaskType
+    prepare_model_for_kbit_training
 )
-from sentence_transformers import SentenceTransformer
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
@@ -18,37 +19,89 @@ from transformers import (
 )
 
 
+def can_use_quantization():
+    """Check if accelerate library is available and if CUDA is available for quantization"""
+    try:
+        import accelerate
+        has_accelerate = True
+    except ImportError:
+        has_accelerate = False
+
+    # Check if all requirements are met for quantization
+    return has_accelerate and torch.cuda.is_available()
+
 def load_model_and_tokenizer(model_name, device_map="auto", quantization=True):
     """Load the foundation model and tokenizer"""
-    if quantization:
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map=device_map,
-            quantization_config=bnb_config,
-            trust_remote_code=True
-        )
+    # Get token from environment variable (set by the Streamlit app)
+    hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN", None)
+
+    if quantization and can_use_quantization:
+        try:
+            model = quantized_model_load(device_map, hf_token, model_name)
+        except Exception as e:
+            print(f"Quantization failed: {str(e)}. Falling back to standard loading.")
+            model = standard_model_load(device_map, hf_token, model_name)
     else:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            device_map=device_map,
-            trust_remote_code=True
-        )
+        model = standard_model_load(device_map, hf_token, model_name)
 
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        token=hf_token
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     return model, tokenizer
 
-def setup_peft_model(model):
-    """Configure the model for Parameter-Efficient Fine-Tuning (PEFT)"""
+
+def quantized_model_load(device_map, hf_token, model_name):
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.float16
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        quantization_config=bnb_config,
+        device_map=device_map,
+        trust_remote_code=True,
+        token=hf_token
+    )
+    model.is_quantized = True
+    return model
+
+
+def standard_model_load(device_map, hf_token, model_name):
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        device_map=device_map,
+        trust_remote_code=True,
+        token=hf_token
+    )
+    model.is_quantized = False
+    return model
+
+
+def prepare_model_for_training(model):
+    """Prepare model for training by moving parameters from meta device to actual device"""
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    # Unwrap DDP model if needed
+    if hasattr(model, "module"):
+        model = model.module
+
+    # Move model parameters from meta device if needed
+    for param in model.parameters():
+        if hasattr(param, "device") and param.device.type == 'meta':
+            param.data = param.data.to(device)
+
+    return model
+
+
+# Setup LoRA for efficient fine-tuning
+def setup_lora_model(model):
+    """Configure the model for Parameter-Efficient Fine-Tuning with LoRA"""
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         inference_mode=False,
@@ -61,10 +114,11 @@ def setup_peft_model(model):
     if hasattr(model, 'is_quantized') and model.is_quantized:
         model = prepare_model_for_kbit_training(model)
 
-    peft_model = get_peft_model(model, peft_config)
-    return peft_model
+    lora_model = get_peft_model(model, peft_config)
+    return lora_model
 
-def prepare_dataset_for_training(data):
+# Prepare dataset for training
+def prepare_dataset(data):
     """Prepare dataset for fine-tuning"""
     formatted_data = []
 
@@ -76,8 +130,15 @@ def prepare_dataset_for_training(data):
 
     return Dataset.from_list(formatted_data)
 
+# Fine-tune model
 def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=3, batch_size=4):
     """Fine-tune the model using the prepared dataset"""
+    # Check if we have CUDA available for FP16 training
+    fp16_enabled = torch.cuda.is_available()
+
+    # Prepare model by moving parameters from meta device if needed
+    model = prepare_model_for_training(model)
+
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=epochs,
@@ -86,12 +147,13 @@ def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=3, batch_size=
         optim="adamw_torch",
         learning_rate=2e-4,
         weight_decay=0.01,
-        fp16=True,
+        fp16=fp16_enabled,
         logging_steps=50,
         save_strategy="epoch",
+        evaluation_strategy="epoch",
         save_total_limit=2,
         load_best_model_at_end=True,
-        report_to="none"
+        report_to=None
     )
 
     data_collator = DataCollatorForLanguageModeling(
@@ -119,117 +181,41 @@ def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=3, batch_size=
 
     return model, tokenizer
 
-def generate_response(model, tokenizer, title, max_new_tokens=256):
+# Generate response using the model
+def generate_response(model, tokenizer, query):
     """Generate a product description from a title"""
-    formatted_prompt = f"Given the product title, provide a detailed description of the product.\n\nProduct: {title}\n\nDescription:"
+    prompt = f"Given the user question, provide a detailed description of the product.\n\nQuery: {query}\n\nDescription:"
+    inputs = tokenizer(prompt, return_tensors="pt")
+    outputs = model.generate(**inputs, max_new_tokens=20)
+    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    return response.replace(prompt,"")
 
-    inputs = tokenizer(formatted_prompt, return_tensors="pt").to(model.device)
-def setup_groq_client(api_key):
-    """Setup Groq client for inference"""
-    if not GROQ_AVAILABLE:
-        raise ImportError("Groq library not installed. Install with: pip install groq")
+# Load Amazon dataset
+def load_amazon_dataset(file_path, max_samples=None):
+    """Load data from trn.json file which is in JSON Lines format"""
+    data = []
+    with open(file_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if line.strip():  # Skip empty lines
+                try:
+                    item = json.loads(line.strip())
+                    if 'title' in item and 'content' in item:
+                        data.append({
+                            "input": item['title'],
+                            "output": item['content']
+                        })
+                except json.JSONDecodeError:
+                    continue  # Skip lines that can't be parsed
 
-    return Groq(api_key=api_key)
+            # Apply max_samples limit if specified
+            if max_samples and len(data) >= max_samples:
+                break
 
-def generate_response_groq(client, title, model="llama3-8b-8192", max_tokens=256):
-    """Generate a product description using Groq API"""
-    prompt = f"Given the product title, provide a detailed description of the product.\n\nProduct: {title}\n\nDescription:"
+    return data
 
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ],
-        model=model,
-        max_tokens=max_tokens,
-        temperature=0.7,
-        top_p=0.9
-    )
-
-    return chat_completion.choices[0].message.content.strip()
-
-def generate_response(model, tokenizer, title, max_new_tokens=256, use_groq=False, groq_client=None, groq_model="llama3-8b-8192"):
-    """Generate a product description from a title - supports both local and Groq inference"""
-    if use_groq and groq_client:
-        return generate_response_groq(groq_client, title, groq_model, max_new_tokens)
-
-    # Local inference
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=True,
-            temperature=0.7,
-            top_p=0.9
-        )
-
-    generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    generated_response = generated_text[len(formatted_prompt):]
-
-    return generated_response.strip()
-
-def setup_vector_db(products, db_path="./chroma_db"):
-    """Setup ChromaDB with product embeddings"""
-    client = chromadb.PersistentClient(path=db_path)
-
-    try:
-        collection = client.get_collection("amazon_products")
-        return client, collection
-    except:
-        collection = client.create_collection("amazon_products")
-
-        embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-
-        documents = []
-        metadatas = []
-        ids = []
-
-        for i, product in enumerate(products):
-            text = f"{product['title']} {product['content']}"
-            documents.append(text)
-            metadatas.append({
-                "title": product['title'],
-                "content": product['content']
-            })
-            ids.append(str(i))
-
-        embeddings = embedding_model.encode(documents).tolist()
-
-        collection.add(
-            embeddings=embeddings,
-            documents=documents,
-            metadatas=metadatas,
-            ids=ids
-        )
-
-        return client, collection
-
-def find_similar_products_rag(query, products, top_k=3, db_path="./chroma_db"):
-    """Find similar products using RAG with ChromaDB and embeddings"""
-    try:
-        client, collection = setup_vector_db(products, db_path)
-
-        embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
-        query_embedding = embedding_model.encode([query]).tolist()
-
-        results = collection.query(
-            query_embeddings=query_embedding,
-            n_results=top_k
-        )
-
-        similar_products = []
-        for metadata in results['metadatas'][0]:
-            similar_products.append({
-                'title': metadata['title'],
-                'content': metadata['content']
-            })
-
-        return similar_products
-
-    except Exception as e:
-        print(f"Error with RAG retrieval: {e}")
-
-def find_similar_products(query, products, top_k=3):
-    """Find similar products - uses RAG if available, fallback to TF-IDF"""
-    return find_similar_products_rag(query, products, top_k)
+# Save preprocessed data
+def save_preprocessed_data(data, output_path):
+    """Save preprocessed data to a JSON file"""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2)
