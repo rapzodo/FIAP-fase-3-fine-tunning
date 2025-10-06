@@ -284,41 +284,6 @@ FIAP-fase-3-fine-tunning/
 ```
 
 ---
-
-## 🎬 Criando Seu Vídeo de Demonstração
-
-### O Que Mostrar (máximo 10 minutos)
-
-1. **Introdução (1 min)**
-   - Explique o desafio: fine-tune do Gemma em dados da Amazon
-   - Mostre a prévia do dataset
-
-2. **Antes do Fine-Tuning (2 min)**
-   - Faça uma pergunta sobre um produto
-   - Mostre a resposta genérica/incorreta do modelo original
-
-3. **Processo de Fine-Tuning (1 min)**
-   - Mostre a configuração (3.000 amostras, 3 épocas)
-   - Explique brevemente os parâmetros LoRA
-   - (Pule o treinamento real - apenas mostre que iniciou)
-
-4. **Depois do Fine-Tuning (3 min)**
-   - Faça a mesma pergunta
-   - Mostre a resposta melhorada, no estilo Amazon
-   - Mostre as referências de treinamento (prova de aprendizado)
-
-5. **Explicação Técnica (2 min)**
-   - Explique LoRA e por que é eficiente
-   - Mostre os parâmetros de treinamento usados
-   - Mencione escalabilidade para o dataset completo de 131K
-
-6. **Conclusão (1 min)**
-   - Resuma as melhorias
-   - Mencione limitações (dados de treinamento limitados)
-   - Explique caminho para produção (treinamento com dataset completo)
-
----
-
 ## ⚠️ Notas Importantes
 
 ### Limitações
@@ -358,16 +323,3 @@ Mas não memorizará perfeitamente cada produto. Isso é esperado e aceitável p
 ✅ **Demonstração em vídeo**: Walkthrough de 10 minutos  
 
 ---
-
-## 💡 Dicas para o Sucesso
-
-1. **Inicie o treinamento hoje à noite** com as configurações padrão (3.000 amostras, 3 épocas)
-2. **Deixe executar durante a noite** (~8-10 horas)
-3. **Teste pela manhã** - experimente várias consultas de produtos
-4. **Grave sua demo** mostrando comparação antes/depois
-5. **Seja honesto sobre as limitações** no seu vídeo
-
-**O objetivo é demonstrar que o fine-tuning funciona, não alcançar a perfeição!** ✨
-
----
-
