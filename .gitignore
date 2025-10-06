@@ -39,6 +39,9 @@ data/trn.json
 data/preprocessed_amazon.json
 data/amazon_ft_data.json
 *.json.gz
+# Ignore all large data files in data directory
+data/*.json
+!data/.gitkeep
 
 # Model Files
 models/gemma-2b-finetuned/
@@ -60,4 +63,3 @@ chroma_db/
 
 # Hugging Face Cache
 .cache/
-

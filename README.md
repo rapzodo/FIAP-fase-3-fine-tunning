@@ -358,3 +358,16 @@ Mas não memorizará perfeitamente cada produto. Isso é esperado e aceitável p
 ✅ **Demonstração em vídeo**: Walkthrough de 10 minutos  
 
 ---
+
+## 💡 Dicas para o Sucesso
+
+1. **Inicie o treinamento hoje à noite** com as configurações padrão (3.000 amostras, 3 épocas)
+2. **Deixe executar durante a noite** (~8-10 horas)
+3. **Teste pela manhã** - experimente várias consultas de produtos
+4. **Grave sua demo** mostrando comparação antes/depois
+5. **Seja honesto sobre as limitações** no seu vídeo
+
+**O objetivo é demonstrar que o fine-tuning funciona, não alcançar a perfeição!** ✨
+
+---
+
