@@ -1,449 +1,235 @@
-import json
 import os
-import pandas as pd
+import shutil
+
 import streamlit as st
-from progress_utils import process_json_with_progress, iterate_with_progress
+import torch
+
+from api_model_utils import test_model_before_finetuning
 from model_utils import (
     load_model_and_tokenizer,
-    setup_peft_model,
-    prepare_dataset_for_training,
+    setup_lora_model,
+    prepare_dataset,
     fine_tune_model,
     generate_response,
-    find_similar_products,
-    setup_groq_client,
-    GROQ_AVAILABLE
+    load_amazon_dataset
 )
+from rag_utils import get_rag_instance
 
-def load_json_data(file_path, max_samples=None, min_content_length=10):
-    """Load and filter JSON data with progress tracking."""
-    with open(file_path, 'r', encoding='utf-8') as f:
+
+def check_model_exists(model_dir):
+    """Check if LoRA adapter files exist in the directory (not just the directory itself)"""
+    if not os.path.isdir(model_dir):
+        return False
+    adapter_cfg = os.path.exists(os.path.join(model_dir, "adapter_config.json"))
+    adapter_bin = os.path.exists(os.path.join(model_dir, "adapter_model.bin"))
+    adapter_safetensors = os.path.exists(os.path.join(model_dir, "adapter_model.safetensors"))
+    return adapter_cfg and (adapter_bin or adapter_safetensors)
+
+
+def delete_fine_tuned_model(model_dir):
+    """Delete the fine-tuned model directory if it exists"""
+    if os.path.exists(model_dir):
         try:
-            json_data = json.load(f)
-
-            def process_item(item):
-                if item.get('content') and len(item['content']) >= min_content_length:
-                    return {
-                        'title': item['title'],
-                        'content': item['content']
-                    }
-                return None
-
-            data = process_json_with_progress(
-                json_data=json_data,
-                process_function=process_item,
-                max_samples=max_samples,
-                update_frequency=100
-            )
-
-            return data
+            shutil.rmtree(model_dir)
+            return True
         except Exception as e:
-            st.error(f"Error processing JSON file: {e}")
-            return []
+            st.error(f"Failed to delete existing model: {str(e)}")
+            return False
+    return True
 
-def preprocess_amazon_dataset(input_path, output_path, max_samples=None, min_content_length=10):
-    st.write(f"Processing dataset from {input_path}...")
-
-    data = load_json_data(input_path, max_samples, min_content_length)
-
-    df = pd.DataFrame(data)
-    st.write(f"Total entries after filtering: {len(df)}")
-
-    st.subheader("Sample entries:")
-    st.dataframe(df.head(3))
-
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    df.to_json(output_path, orient='records')
-    st.success(f"Preprocessed data saved to {output_path}")
-
-    return df
-
-def create_fine_tuning_format(input_path, output_path, model_type="llama"):
-    st.write(f"Creating fine-tuning format for {model_type} from {input_path}...")
-
-    with open(input_path, 'r', encoding='utf-8') as file:
-        data = json.load(file)
-
-    if model_type.lower() in ["llama", "gpt"]:
-        def format_item(item, _):
-            return {
-                "instruction": "Given the product title, provide a detailed description of the product.",
-                "input": item["title"],
-                "output": item["content"]
-            }
-
-        formatted_data = iterate_with_progress(
-            items=data,
-            process_function=format_item,
-            description=f"Formatting data for {model_type}"
-        )
-    else:
-        st.error(f"Unsupported model type: {model_type}")
-        return []
-
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, 'w', encoding='utf-8') as file:
-        json.dump(formatted_data, file, indent=2)
-
-    st.success(f"Fine-tuning data saved to {output_path}")
-    st.write(f"Total examples: {len(formatted_data)}")
-
-    st.subheader("Sample formatted data:")
-    for i, item in enumerate(formatted_data[:2]):
-        with st.expander(f"Example {i+1}"):
-            for k, v in item.items():
-                if len(str(v)) > 100:
-                    st.text(f"{k}: {str(v)[:100]}...")
-                else:
-                    st.text(f"{k}: {v}")
-
-    return formatted_data
 
 def main():
-    st.set_page_config(page_title="Amazon Product Description Generator", layout="wide")
+    st.set_page_config(page_title="Fine-Tuning Foundation Models - Tech Challenge", layout="wide")
+    st.title("Fine-Tuning Gemma Model for Product Descriptions")
+    st.markdown("This application demonstrates fine-tuning of the Gemma-2B model to generate better product descriptions based on product titles.")
 
-    # Initialize session state variables
-    if "fine_tuning_complete" not in st.session_state:
-        st.session_state.fine_tuning_complete = False
-    if "products_data" not in st.session_state:
-        st.session_state.products_data = []
-    if "model" not in st.session_state:
-        st.session_state.model = None
-    if "tokenizer" not in st.session_state:
-        st.session_state.tokenizer = None
-    if "chat_history" not in st.session_state:
-        st.session_state.chat_history = []
-    if "model_loaded" not in st.session_state:
-        st.session_state.model_loaded = False
-    if "before_training_results" not in st.session_state:
-        st.session_state.before_training_results = []
-    if "after_training_results" not in st.session_state:
-        st.session_state.after_training_results = []
+    # Sidebar for configuration
+    st.sidebar.header("Configuration")
 
-    st.title("Fine-Tuning Foundation Models on AmazonTitles Dataset")
+    # Hugging Face authentication
+    hf_token = st.sidebar.text_input("Hugging Face Token", type="password", help="Required for Gemma model access. Get your token at https://huggingface.co/settings/tokens")
+    if hf_token:
+        os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
 
-    tab_preprocess, tab_model, tab_chat = st.tabs(["1. Preprocess Data", "2. Model", "3. Compare Results"])
+    # Model selection - using only Gemma model
+    model_path = "google/gemma-2b"  # Direct path to the Gemma model
 
-    with tab_preprocess:
-        st.header("Data Preprocessing")
+    # Dataset configuration
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    data_path = os.path.join(base_dir, "data", "trn.json")
+    st.sidebar.subheader("Dataset Configuration")
+    max_samples = st.sidebar.slider("Maximum samples for training", 100, 10000, 3000)  # Default 3000 for overnight
 
-        col1, col2 = st.columns([1, 1])
+    # Fine-tuning configuration
+    st.sidebar.subheader("Fine-tuning Configuration")
+    epochs = st.sidebar.slider("Number of epochs", 1, 10, 3)  # Default 3 epochs
+    batch_size = st.sidebar.slider("Batch size", 1, 8, 2)
+    output_dir = os.path.join(base_dir, "models", "gemma-2b-finetuned")
 
-        with col1:
-            input_path = st.text_input(
-                "Input Dataset Path",
-                value="data/trn.json"
-            )
+    # Main content area with tabs
+    tabs = st.tabs(["Compare Before/After Fine-tuning", "Dataset Preview", "Fine-tuning Process"])
 
-            output_path = st.text_input(
-                "Output Path for Preprocessed Data",
-                value="data/preprocessed_amazon.json"
-            )
+    # Tab 1: Compare Before/After Fine-tuning
+    with tabs[0]:
+        st.header("Compare Model Results Before & After Fine-tuning")
 
-        with col2:
-            ft_output = st.text_input(
-                "Output Path for Fine-Tuning Data",
-                value="data/amazon_ft_data.json"
-            )
+        query = st.text_input("Enter a question:", key="compare_query")
 
-            model_type = st.selectbox(
-                "Model Type for Formatting",
-                options=["llama", "gpt"],
-                index=0
-            )
+        if not query:
+            st.error("You must enter a question")
 
-        col3, col4 = st.columns([1, 1])
-
-        with col3:
-            max_samples = st.number_input(
-                "Maximum Number of Samples",
-                min_value=100,
-                max_value=100000,
-                value=10000,
-                step=100
-            )
-
-        with col4:
-            min_content_length = st.number_input(
-                "Minimum Content Length",
-                min_value=1,
-                max_value=1000,
-                value=20,
-                step=1
-            )
-
-        if st.button("Start Preprocessing", key="preprocess_button"):
-            df = preprocess_amazon_dataset(
-                input_path,
-                output_path,
-                max_samples,
-                min_content_length
-            )
-
-            create_fine_tuning_format(
-                output_path,
-                ft_output,
-                model_type
-            )
-
-            with open(output_path, 'r') as f:
-                st.session_state.products_data = json.load(f)
-
-            st.success("✅ Preprocessing complete!")
-
-    with tab_model:
-        st.header("Model Loading and Fine-Tuning")
-
-        model_selection = st.radio(
-            "Select Foundation Model",
-            [
-                "TinyLlama (1.1B - Fastest, less accurate)",
-                "Llama-2 (7B - Balanced)",
-                "Mistral (7B - Best quality)",
-                "Custom (specify below)"
-            ],
-            index=0
-        )
-
-        model_mapping = {
-            "TinyLlama (1.1B - Fastest, less accurate)": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-            "Llama-2 (7B - Balanced)": "meta-llama/Llama-2-7b-hf",
-            "Mistral (7B - Best quality)": "mistralai/Mistral-7B-v0.1",
-            "Custom (specify below)": ""
-        }
-
-        col1, col2 = st.columns([1, 1])
+        col1, col2 = st.columns(2)
 
         with col1:
-            if model_selection == "Custom (specify below)":
-                model_name = st.text_input("Foundation Model Path", value="")
+            st.subheader("Before Fine-tuning")
+            if not hf_token:
+                st.warning("⚠️ Hugging Face token required. Please enter your token in the sidebar.")
+                button_disabled = True
             else:
-                model_name = st.text_input(
-                    "Foundation Model Path",
-                    value=model_mapping[model_selection],
-                    disabled=True
-                )
+                button_disabled = False
 
-            data_path = st.text_input(
-                "Fine-Tuning Data Path",
-                value="data/amazon_ft_data.json"
-            )
+            if st.button("Generate with Original Model", disabled=button_disabled):
+                with st.spinner("Loading the original Gemma-2B model..."):
+                    try:
+                        response = test_model_before_finetuning(model_path, query)
+                        st.markdown("### Generated Description:")
+                        st.write(response)
+                    except Exception as e:
+                        st.error(f"Error using the original model: {str(e)}")
 
         with col2:
-            output_dir = st.text_input(
-                "Output Directory",
-                value="models/amazon_ft_model"
-            )
+            st.subheader("After Fine-tuning")
 
-            use_quantization = st.checkbox("Use 4-bit Quantization", value=True)
+            if check_model_exists(output_dir):
+                fine_tuned_available = True
+                st.success("Fine-tuned model is available!")
+            else:
+                fine_tuned_available = False
+                st.info("Fine-tuned model is not available yet. Please run the fine-tuning process first.")
 
-        col3, col4 = st.columns([1, 1])
+            if st.button("Generate with Fine-tuned Model", disabled=not fine_tuned_available):
+                with st.spinner(f"Loading fine-tuned model..."):
+                    try:
+                        model, tokenizer = load_model_and_tokenizer(output_dir, quantization=False)
 
-        with col3:
-            epochs = st.number_input("Number of Epochs", min_value=1, max_value=10, value=3, step=1)
+                        with st.spinner("Generating response from fine-tuned model..."):
+                            response = generate_response(model, tokenizer, query)
+                            st.markdown("### Generated Description:")
+                            st.write(response)
 
-        with col4:
-            batch_size = st.number_input("Batch Size", min_value=1, max_value=32, value=4, step=1)
+                        # Show references (for transparency, not for generation)
+                        with st.spinner("Finding similar products from training data..."):
+                            rag = get_rag_instance(db_path=os.path.join(base_dir, "chroma_db"))
+                            references = rag.find_relevant_references(query, top_k=3)
 
-        ft_samples = st.number_input(
-            "Number of Training Examples (use smaller value for testing)",
-            min_value=10,
-            max_value=50000,
-            value=500,
-            step=10
-        )
+                            if references:
+                                st.markdown("---")
+                                st.markdown("### 📚 References from Training Data:")
+                                st.info("For transparency, here are similar products the model learned about during training:")
 
-        if not st.session_state.model_loaded:
-            if st.button("Load Model", key="load_model_button"):
-                final_model_name = model_name if model_name else model_mapping[model_selection]
+                                for idx, ref in enumerate(references, 1):
+                                    with st.expander(f"Reference {idx}: {ref['input']}", expanded=False):
+                                        st.markdown("**Product Title:**")
+                                        st.write(ref['input'])
+                                        st.markdown("**Product Description:**")
+                                        st.write(ref['output'] if ref['output'] else "_No description available_")
 
-                with st.spinner(f"Loading model: {final_model_name}"):
-                    model, tokenizer = load_model_and_tokenizer(
-                        final_model_name,
-                        device_map="auto",
-                        quantization=use_quantization
-                    )
+                        del model
+                        torch.cuda.empty_cache()
+                    except Exception as e:
+                        st.error(f"Error loading or using the fine-tuned model: {str(e)}")
 
-                st.session_state.model = model
-                st.session_state.tokenizer = tokenizer
-                st.session_state.model_loaded = True
+    # Tab 2: Dataset Preview
+    with tabs[1]:
+        st.header("Amazon Dataset Preview")
 
-                st.success(f"Model {final_model_name} loaded successfully!")
+        if os.path.exists(data_path):
+            with st.spinner("Loading sample data..."):
+                preview_data = load_amazon_dataset(data_path, max_samples=10)
 
-        if st.session_state.model_loaded and not st.session_state.fine_tuning_complete:
-            st.subheader("Test Model Before Fine-Tuning")
+            st.info(f"Showing {len(preview_data)} samples from the dataset")
 
-            test_query = st.text_input("Enter a product title to test:", key="before_query")
+            valid_samples = [item for item in preview_data if item['output']]
+            empty_samples = len(preview_data) - len(valid_samples)
 
-            if st.button("Test Before Fine-Tuning", key="test_before"):
-                with st.spinner("Generating response with the model before fine-tuning..."):
-                    response = generate_response(
-                        st.session_state.model,
-                        st.session_state.tokenizer,
-                        test_query
-                    )
+            if empty_samples > 0:
+                st.warning(f"{empty_samples} items had empty descriptions and will be skipped during training.")
 
-                    st.session_state.before_training_results.append({
-                        "query": test_query,
-                        "response": response
-                    })
-
-                    st.write("**Response before fine-tuning:**")
-                    st.write(response)
-
-        if st.session_state.model_loaded and not st.session_state.fine_tuning_complete:
-            if st.button("Run Fine-Tuning", key="finetune_button"):
-                with st.spinner("Fine-tuning in progress... This may take a while."):
-                    with open(data_path, 'r') as f:
-                        data = json.load(f)
-
-                    dataset = prepare_dataset_for_training(data)
-
-                    if ft_samples < len(dataset):
-                        dataset = dataset.select(range(ft_samples))
-                        st.write(f"Using {ft_samples} examples from the dataset")
-
-                    peft_model = setup_peft_model(st.session_state.model)
-
-                    fine_tuned_model, tokenizer = fine_tune_model(
-                        peft_model,
-                        st.session_state.tokenizer,
-                        dataset,
-                        output_dir,
-                        epochs=epochs,
-                        batch_size=batch_size
-                    )
-
-                    st.session_state.model = fine_tuned_model
-                    st.session_state.tokenizer = tokenizer
-                    st.session_state.fine_tuning_complete = True
-
-                    if not st.session_state.products_data:
-                        try:
-                            with open(output_path, 'r') as f:
-                                st.session_state.products_data = json.load(f)
-                        except Exception as e:
-                            st.warning(f"Could not load product data: {e}")
-
-                    st.success("🎉 Fine-tuning complete!")
-
-        if st.session_state.fine_tuning_complete:
-            st.subheader("Test Model After Fine-Tuning")
-
-            test_query = st.text_input("Enter a product title to test:", key="after_query")
-
-            if st.button("Test After Fine-Tuning", key="test_after"):
-                with st.spinner("Generating response with the fine-tuned model..."):
-                    response = generate_response(
-                        st.session_state.model,
-                        st.session_state.tokenizer,
-                        test_query
-                    )
-
-                    st.session_state.after_training_results.append({
-                        "query": test_query,
-                        "response": response
-                    })
-
-                    st.write("**Response after fine-tuning:**")
-                    st.write(response)
-
-    with tab_chat:
-        st.header("Compare Results")
-
-        if st.session_state.before_training_results or st.session_state.after_training_results:
-            st.subheader("Before vs. After Fine-Tuning")
-
-            all_queries = set()
-            for result in st.session_state.before_training_results:
-                all_queries.add(result["query"])
-            for result in st.session_state.after_training_results:
-                all_queries.add(result["query"])
-
-            for query in all_queries:
-                st.markdown(f"**Query:** {query}")
-
-                col1, col2 = st.columns(2)
-
-                before_response = "Not tested"
-                for result in st.session_state.before_training_results:
-                    if result["query"] == query:
-                        before_response = result["response"]
-                        break
-
-                after_response = "Not tested"
-                for result in st.session_state.after_training_results:
-                    if result["query"] == query:
-                        after_response = result["response"]
-                        break
-
-                with col1:
-                    st.markdown("**Before Fine-Tuning:**")
-                    st.write(before_response)
-
-                with col2:
-                    st.markdown("**After Fine-Tuning:**")
-                    st.write(after_response)
-
-                st.markdown("---")
+            for i, item in enumerate(valid_samples):
+                with st.expander(f"Sample {i+1}: {item['input']}"):
+                    st.markdown("**Title:**")
+                    st.write(item['input'])
+                    st.markdown("**Description:**")
+                    st.write(item['output'])
         else:
-            st.info("No results to compare yet. Test the model before and after fine-tuning to see the comparison.")
+            st.error(f"Dataset file not found: {data_path}")
 
-        if st.session_state.fine_tuning_complete:
-            st.subheader("Chat with Fine-Tuned Model")
+    # Tab 3: Fine-tuning Process
+    with tabs[2]:
+        st.header("Run Fine-tuning Process")
+        st.info("This tab allows you to fine-tune the Gemma-2B model on Amazon product data.")
+        st.warning("Fine-tuning may take a long time depending on your hardware. Make sure you have enough memory.")
 
-            chat_container = st.container()
-            with chat_container:
-                for message in st.session_state.chat_history:
-                    if message["role"] == "user":
-                        st.markdown(f"**You:** {message['content']}")
-                    else:
-                        st.markdown(f"**AI:** {message['content']}")
+        if check_model_exists(output_dir):
+            st.warning("⚠️ A fine-tuned model already exists. Starting a new fine-tuning will delete the existing model.")
 
-                        if "references" in message:
-                            st.markdown("**References:**")
-                            for i, ref in enumerate(message["references"]):
-                                with st.expander(f"Reference {i+1}: {ref['title']}"):
-                                    st.write(ref["content"])
+        col1, col2 = st.columns([2, 1])
 
-            product_query = st.text_input("Enter a product title to generate a description:", key="chat_query")
+        with col1:
+            st.subheader("Fine-tuning Configuration:")
+            st.write(f"- Selected model: **Gemma-2B** ({model_path})")
+            st.write(f"- Maximum training samples: **{max_samples}**")
+            st.write(f"- Number of epochs: **{epochs}**")
+            st.write(f"- Batch size: **{batch_size}**")
+            st.write(f"- Output directory: **{output_dir}**")
 
-            if st.button("Generate Description", key="chat_generate"):
-                if product_query:
-                    st.session_state.chat_history.append({
-                        "role": "user",
-                        "content": product_query
-                    })
+        with col2:
+            st.subheader("Execute Fine-tuning")
+            if st.button("Start Fine-tuning Process", use_container_width=True, disabled=button_disabled):
+                # Delete existing fine-tuned model if it exists
+                if check_model_exists(output_dir):
+                    with st.spinner("Deleting existing fine-tuned model..."):
+                        if delete_fine_tuned_model(output_dir):
+                            st.success("Existing model deleted successfully!")
+                        else:
+                            st.error("Failed to delete existing model. Aborting fine-tuning.")
+                            return
 
-                    with st.spinner("Generating product description..."):
-                        response = generate_response(
-                            st.session_state.model,
-                            st.session_state.tokenizer,
-                            product_query
-                        )
+                with st.spinner("Loading dataset..."):
+                    data = load_amazon_dataset(data_path, max_samples=max_samples)
+                    st.info(f"Loaded {len(data)} samples for training.")
 
-                    references = []
-                    if st.session_state.products_data:
-                        similar_products = find_similar_products(
-                            product_query,
-                            st.session_state.products_data,
-                            top_k=3
-                        )
+                with st.spinner("Loading the Gemma-2B model..."):
+                    try:
+                        model, tokenizer = load_model_and_tokenizer(model_path, quantization=False)
 
-                        references = [
-                            {
-                                "title": product["title"],
-                                "content": product["content"]
-                            }
-                            for product in similar_products
-                        ]
+                        with st.spinner("Setting up LoRA for efficient fine-tuning..."):
+                            lora_model = setup_lora_model(model)
 
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": response,
-                        "references": references
-                    })
+                        with st.spinner("Preparing dataset..."):
+                            dataset = prepare_dataset(data)
 
-                    st.experimental_rerun()
+                        with st.spinner("Indexing training data into vector database..."):
+                            rag = get_rag_instance(db_path=os.path.join(base_dir, "chroma_db"))
+                            rag.index_training_data(data)
+                            st.success("✅ Training data indexed successfully!")
+
+                        with st.spinner(f"Fine-tuning the model ({epochs} epochs)..."):
+                            progress_text = st.empty()
+                            progress_bar = st.progress(0)
+
+                            for i in range(epochs):
+                                progress_text.text(f"Training epoch {i+1}/{epochs}...")
+                                progress_bar.progress((i / epochs))
+                                fine_tune_model(lora_model, tokenizer, dataset, output_dir, epochs=1, batch_size=batch_size)
+
+                            progress_bar.progress(1.0)
+
+                        st.success(f"Fine-tuning completed! Model saved to {output_dir}")
+
+                    except Exception as e:
+                        st.error(f"Error during fine-tuning: {str(e)}")
+
 
 if __name__ == "__main__":
     main()
