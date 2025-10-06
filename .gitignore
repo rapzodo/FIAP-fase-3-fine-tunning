@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Large Data Files
+data/trn.json
+data/preprocessed_amazon.json
+data/amazon_ft_data.json
+*.json.gz
+
+# Model Files
+models/gemma-2b-finetuned/
+models/*/
+
+# Vector Database
+chroma_db/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log
+
+# Environment variables
+.env
+.env.local
+
+# Hugging Face Cache
+.cache/
+

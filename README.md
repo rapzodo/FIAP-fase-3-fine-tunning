@@ -1,381 +1,360 @@
-# Fine-Tuning Gemma-2B for Amazon Product Descriptions
+# Fine-Tuning do Gemma-2B para Descrições de Produtos da Amazon
 
-## 📋 Project Overview
+## 📋 Visão Geral do Projeto
 
-This project demonstrates fine-tuning the Gemma-2B foundation model using LoRA (Low-Rank Adaptation) on Amazon product data. The model learns to generate product descriptions based on product titles, using the AmazonTitles-1.3MM dataset.
+Este projeto demonstra o fine-tuning do modelo foundation Gemma-2B usando LoRA (Low-Rank Adaptation) em dados de produtos da Amazon. O modelo aprende a gerar descrições de produtos baseadas em títulos de produtos, usando o dataset AmazonTitles-1.3MM.
 
 **Tech Challenge - Fase 3 - FIAP**
 
 ---
 
-## 🎯 Purpose
+## 🎯 Propósito
 
-1. **Fine-tune a foundation model** (Gemma-2B) on domain-specific data (Amazon products)
-2. **Use Parameter-Efficient Fine-Tuning (PEFT)** with LoRA to train on consumer hardware
-3. **Compare model performance** before and after fine-tuning
-4. **Demonstrate retrieval of training sources** using RAG (Retrieval-Augmented Generation)
+1. **Fazer fine-tuning de um modelo foundation** (Gemma-2B) em dados específicos de domínio (produtos da Amazon)
+2. **Usar Fine-Tuning Eficiente em Parâmetros (PEFT)** com LoRA para treinar em hardware de consumidor
+3. **Comparar performance do modelo** antes e depois do fine-tuning
+4. **Demonstrar recuperação de fontes de treinamento** usando RAG (Retrieval-Augmented Generation)
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Arquitetura
 
-### Components:
-- **Base Model**: Google Gemma-2B (2 billion parameters)
-- **Fine-Tuning Method**: LoRA (Low-Rank Adaptation)
-- **Dataset**: AmazonTitles-1.3MM (131,262 products with titles and descriptions)
-- **Vector Database**: ChromaDB for semantic search
+### Componentes:
+- **Modelo Base**: Google Gemma-2B (2 bilhões de parâmetros)
+- **Método de Fine-Tuning**: LoRA (Low-Rank Adaptation)
+- **Dataset**: AmazonTitles-1.3MM (131.262 produtos com títulos e descrições)
+- **Banco de Dados Vetorial**: ChromaDB para busca semântica
 - **Embeddings**: SentenceTransformer (all-MiniLM-L6-v2)
-- **UI**: Streamlit web application
+- **Interface**: Aplicação web Streamlit
 
-### Training Flow:
+### Fluxo de Treinamento:
 ```
-Amazon Dataset → LoRA Fine-Tuning → Fine-tuned Model
+Dataset Amazon → Fine-Tuning LoRA → Modelo Fine-Tunado
                        ↓
-                 ChromaDB Indexing (for references)
+                 Indexação ChromaDB (para referências)
 ```
 
-### Inference Flow:
+### Fluxo de Inferência:
 ```
-User Query → Fine-tuned Model → Generated Description
+Pergunta do Usuário → Modelo Fine-Tunado → Descrição Gerada
                 ↓
-         ChromaDB Semantic Search → Training References (for transparency)
+         Busca Semântica ChromaDB → Referências de Treinamento (para transparência)
 ```
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Início Rápido
 
-### Prerequisites
+### Pré-requisitos
 
 1. **Python 3.10+**
-2. **24GB+ RAM** (for model loading)
-3. **Apple Silicon (M1/M2/M3/M4)** or **CUDA GPU** (optional, for faster training)
-4. **Hugging Face Token** (required for Gemma model access)
-   - Get token at: https://huggingface.co/settings/tokens
-   - Accept Gemma license at: https://huggingface.co/google/gemma-2b
+2. **24GB+ RAM** (para carregar o modelo)
+3. **Apple Silicon (M1/M2/M3/M4)** ou **GPU CUDA** (opcional, para treinamento mais rápido)
+4. **Token Hugging Face** (necessário para acesso ao modelo Gemma)
+   - Obtenha o token em: https://huggingface.co/settings/tokens
+   - Aceite a licença Gemma em: https://huggingface.co/google/gemma-2b
 
-### Installation
+### Instalação
 
 ```bash
-# Clone the repository
+# Clone o repositório
 cd FIAP-fase-3-fine-tunning
 
-# Create virtual environment
+# Crie o ambiente virtual
 python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+source .venv/bin/activate  # No Windows: .venv\Scripts\activate
 
-# Install dependencies
+# Instale as dependências
 pip install -r requirements.txt
 ```
 
-### Running the Application
+### Executando a Aplicação
 
 ```bash
-# Start the Streamlit app
+# Inicie a aplicação Streamlit
 streamlit run src/streamlit_app.py
 ```
 
-The app will open in your browser at `http://localhost:8501`
+A aplicação abrirá no seu navegador em `http://localhost:8501`
 
 ---
 
-## 📊 Training Configuration
+## 📊 Configuração de Treinamento
 
-### Default (Overnight Training - Recommended for Demo)
+### Padrão (Treinamento Noturno - Recomendado para Demo)
 
-**Optimized for 8-10 hour training on Apple M4 Pro (24GB RAM)**
+**Otimizado para treinamento de 8-10 horas no Apple M4 Pro (24GB RAM)**
 
 ```python
-max_samples = 3000      # 3,000 Amazon products
-epochs = 3              # Train for 3 epochs
-batch_size = 2          # Batch size of 2
+max_samples = 3000      # 3.000 produtos da Amazon
+epochs = 3              # Treinar por 3 épocas
+batch_size = 2          # Batch size de 2
 ```
 
-**Expected Results:**
-- ✅ Training Time: ~8-10 hours
-- ✅ Good coverage of product categories
-- ✅ Suitable for demonstration purposes
-- ✅ Model learns Amazon product Q&A patterns
+**Resultados Esperados:**
+- ✅ Tempo de Treinamento: ~8-10 horas
+- ✅ Boa cobertura de categorias de produtos
+- ✅ Adequado para propósitos de demonstração
+- ✅ Modelo aprende padrões de Q&A de produtos da Amazon
 
-### Training Time Estimates
+### Estimativas de Tempo de Treinamento
 
-| Samples | Epochs | Batch Size | Estimated Time | Use Case |
-|---------|--------|------------|----------------|----------|
-| 500     | 3      | 2          | ~2-3 hours     | Quick test |
-| 1,000   | 3      | 2          | ~3-4 hours     | Small demo |
-| **3,000**   | **3**      | **2**          | **~8-10 hours**    | **Overnight demo** ✅ |
-| 5,000   | 3      | 2          | ~12-16 hours   | Extended demo |
-| 10,000  | 3      | 4          | ~24-36 hours   | Production-lite |
+| Amostras | Épocas | Batch Size | Tempo Estimado | Caso de Uso |
+|----------|--------|------------|----------------|-------------|
+| 500      | 3      | 2          | ~2-3 horas     | Teste rápido |
+| 1.000    | 3      | 2          | ~3-4 horas     | Demo pequena |
+| **3.000**    | **3**      | **2**          | **~8-10 horas**    | **Demo noturna** ✅ |
+| 5.000    | 3      | 2          | ~12-16 horas   | Demo estendida |
+| 10.000   | 3      | 4          | ~24-36 horas   | Produção-lite |
 
 ---
 
-## 🎓 LoRA Configuration Explained
+## 🎓 Configuração LoRA Explicada
 
-### Current Settings (Optimized for Demo)
+### Configurações Atuais (Otimizadas para Demo)
 
 ```python
 LoraConfig(
-    r=8,                    # Rank: number of trainable parameters
-    lora_alpha=32,          # Scaling factor (alpha/r = 4x amplification)
-    lora_dropout=0.1,       # 10% dropout to prevent overfitting
-    target_modules=[        # Which model layers to fine-tune
+    r=8,                    # Rank: número de parâmetros treináveis
+    lora_alpha=32,          # Fator de escala (alpha/r = amplificação 4x)
+    lora_dropout=0.1,       # 10% dropout para prevenir overfitting
+    target_modules=[        # Quais camadas do modelo fazer fine-tune
         "q_proj", "o_proj", "k_proj", "v_proj",
         "gate_proj", "up_proj", "down_proj"
     ]
 )
 ```
 
-### Parameter Breakdown
+### Detalhamento dos Parâmetros
 
-| Parameter | Current | Purpose | Demo Impact |
-|-----------|---------|---------|-------------|
-| **r** (Rank) | 8 | Number of trainable parameters added | Good balance: fast training, decent capacity |
-| **lora_alpha** | 32 | How much LoRA influences output (32/8 = 4x) | Strong learning of Amazon data |
-| **lora_dropout** | 0.1 | Prevents overfitting on limited data | Helps generalization |
+| Parâmetro | Atual | Propósito | Impacto na Demo |
+|-----------|-------|-----------|-----------------|
+| **r** (Rank) | 8 | Número de parâmetros treináveis adicionados | Bom equilíbrio: treinamento rápido, capacidade decente |
+| **lora_alpha** | 32 | Quanto o LoRA influencia a saída (32/8 = 4x) | Aprendizado forte dos dados da Amazon |
+| **lora_dropout** | 0.1 | Previne overfitting em dados limitados | Ajuda na generalização |
 
 ---
 
-## 🏭 Full Production Fine-Tuning (All 131K Products)
+## 🏭 Fine-Tuning de Produção Completo (Todos os 131K Produtos)
 
-### Recommended Configuration for Complete Dataset
+### Configuração Recomendada para Dataset Completo
 
 ```python
-# Full dataset training
-max_samples = 131262    # All products in trn.json
-epochs = 3-5            # 3 for speed, 5 for better quality
-batch_size = 4          # Increase if you have more GPU memory
+# Treinamento com dataset completo
+max_samples = 131262    # Todos os produtos em trn.json
+epochs = 3-5            # 3 para velocidade, 5 para melhor qualidade
+batch_size = 4          # Aumente se tiver mais memória GPU
 
-# Enhanced LoRA configuration
+# Configuração LoRA aprimorada
 LoraConfig(
-    r=16,               # Double the rank for more capacity
-    lora_alpha=32,      # Keep 2x amplification
-    lora_dropout=0.05,  # Lower dropout with more data
-    target_modules=[    # Same target modules
+    r=16,               # Dobrar o rank para mais capacidade
+    lora_alpha=32,      # Manter amplificação 2x
+    lora_dropout=0.05,  # Dropout menor com mais dados
+    target_modules=[    # Mesmos módulos alvo
         "q_proj", "o_proj", "k_proj", "v_proj",
         "gate_proj", "up_proj", "down_proj"
     ]
 )
 
-# Training arguments
+# Argumentos de treinamento
 TrainingArguments(
     num_train_epochs=3,
     per_device_train_batch_size=4,
-    gradient_accumulation_steps=4,  # Effective batch size = 16
-    learning_rate=1e-4,             # Lower LR for stability
-    warmup_steps=100,               # Gradual warmup
+    gradient_accumulation_steps=4,  # Batch size efetivo = 16
+    learning_rate=1e-4,             # LR menor para estabilidade
+    warmup_steps=100,               # Aquecimento gradual
     save_strategy="steps",
-    save_steps=5000,                # Save checkpoints every 5K steps
+    save_steps=5000,                # Salvar checkpoints a cada 5K passos
     logging_steps=100,
 )
 ```
 
-### Full Training Estimates
+### Estimativas de Treinamento Completo
 
-| Configuration | Training Time | Hardware Required |
-|--------------|---------------|-------------------|
-| 131K × 3 epochs | ~3-4 days | 24GB RAM, Apple M4 Pro |
-| 131K × 5 epochs | ~5-7 days | 24GB RAM, Apple M4 Pro |
-| 131K × 3 epochs | ~12-18 hours | NVIDIA A100 40GB |
+| Configuração | Tempo de Treinamento | Hardware Necessário |
+|--------------|---------------------|---------------------|
+| 131K × 3 épocas | ~3-4 dias | 24GB RAM, Apple M4 Pro |
+| 131K × 5 épocas | ~5-7 dias | 24GB RAM, Apple M4 Pro |
+| 131K × 3 épocas | ~12-18 horas | NVIDIA A100 40GB |
 
-**Production Recommendations:**
-- Use `r=16` or `r=32` for better memorization
-- Train for 5-10 epochs for production quality
-- Implement evaluation set to monitor overfitting
-- Save checkpoints every 5,000 steps
-- Use learning rate scheduling (warmup + decay)
-
----
-
-## 📖 How to Use the Application
-
-### 1. Enter Hugging Face Token
-- Paste your token in the sidebar
-- Required to download the Gemma-2B model
-
-### 2. Configure Training (Optional)
-Adjust in the sidebar:
-- **Max Samples**: 3,000 (default for overnight)
-- **Epochs**: 3 (default)
-- **Batch Size**: 2 (safe for 24GB RAM)
-
-### 3. Preview Dataset (Optional)
-- Check "Dataset Preview" tab
-- See sample Amazon products
-
-### 4. Start Fine-Tuning
-- Go to "Fine-tuning Process" tab
-- Click "Start Fine-tuning Process"
-- Leave running overnight (~8-10 hours)
-
-### 5. Compare Results
-- Go to "Compare Before/After Fine-tuning" tab
-- Enter a question like: "What is Mog's Kittens?"
-- Click "Generate with Original Model" (before)
-- Click "Generate with Fine-tuned Model" (after)
-- See the improvement and training references!
+**Recomendações para Produção:**
+- Use `r=16` ou `r=32` para melhor memorização
+- Treine por 5-10 épocas para qualidade de produção
+- Implemente conjunto de avaliação para monitorar overfitting
+- Salve checkpoints a cada 5.000 passos
+- Use agendamento de taxa de aprendizado (warmup + decay)
 
 ---
 
-## 🔬 Technical Details
+## 📖 Como Usar a Aplicação
+
+### 1. Digite o Token Hugging Face
+- Cole seu token na barra lateral
+- Necessário para baixar o modelo Gemma-2B
+
+### 2. Configure o Treinamento (Opcional)
+Ajuste na barra lateral:
+- **Max Samples**: 3.000 (padrão para noturno)
+- **Épocas**: 3 (padrão)
+- **Batch Size**: 2 (seguro para 24GB RAM)
+
+### 3. Visualize o Dataset (Opcional)
+- Veja a aba "Dataset Preview"
+- Confira exemplos de produtos da Amazon
+
+### 4. Inicie o Fine-Tuning
+- Vá para a aba "Fine-tuning Process"
+- Clique em "Start Fine-tuning Process"
+- Deixe executando durante a noite (~8-10 horas)
+
+### 5. Compare Resultados
+- Vá para a aba "Compare Before/After Fine-tuning"
+- Digite uma pergunta como: "O que é Mog's Kittens?"
+- Clique em "Generate with Original Model" (antes)
+- Clique em "Generate with Fine-tuned Model" (depois)
+- Veja a melhoria e as referências de treinamento!
+
+---
+
+## 🔬 Detalhes Técnicos
 
 ### LoRA (Low-Rank Adaptation)
 
-LoRA adds small trainable matrices to the model's attention layers, allowing fine-tuning with:
-- **99.9% fewer trainable parameters** (vs full fine-tuning)
-- **3x less memory** required
-- **Faster training** (hours instead of days)
-- **Easy to share** (only need to share LoRA adapters, not full model)
+LoRA adiciona pequenas matrizes treináveis às camadas de atenção do modelo, permitindo fine-tuning com:
+- **99,9% menos parâmetros treináveis** (vs fine-tuning completo)
+- **3x menos memória** necessária
+- **Treinamento mais rápido** (horas em vez de dias)
+- **Fácil de compartilhar** (só precisa compartilhar adaptadores LoRA, não o modelo completo)
 
-### Why These Parameters Work
+### Por Que Esses Parâmetros Funcionam
 
-**For Demo (3,000 samples, r=8):**
-- Trains quickly (overnight)
-- Learns Amazon product style and formatting
-- Good enough to demonstrate fine-tuning effectiveness
-- Won't perfectly memorize all products (expected)
+**Para Demo (3.000 amostras, r=8):**
+- Treina rapidamente (durante a noite)
+- Aprende estilo e formatação de produtos da Amazon
+- Suficiente para demonstrar efetividade do fine-tuning
+- Não memorizará perfeitamente todos os produtos (esperado)
 
-**For Production (131K samples, r=16-32):**
-- Comprehensive coverage of all products
-- Better memorization and recall
-- More robust to variations in queries
-- Production-ready quality
-
----
-
-## 📈 Expected Results
-
-### Before Fine-Tuning
-- Generic responses
-- May hallucinate information
-- No knowledge of specific Amazon products
-- Creative but incorrect
-
-### After Fine-Tuning (3,000 samples)
-- ✅ Amazon-style product descriptions
-- ✅ Better formatting and structure
-- ✅ Stops generating follow-up questions
-- ✅ More focused responses
-- ⚠️ May still hallucinate for unseen products (normal with limited training)
-
-### After Full Fine-Tuning (131K samples)
-- ✅ Comprehensive product knowledge
-- ✅ Better recall of specific products
-- ✅ More accurate descriptions
-- ✅ Production-ready quality
+**Para Produção (131K amostras, r=16-32):**
+- Cobertura abrangente de todos os produtos
+- Melhor memorização e recall
+- Mais robusto a variações nas perguntas
+- Qualidade pronta para produção
 
 ---
 
-## 🛠️ Project Structure
+## 📈 Resultados Esperados
+
+### Antes do Fine-Tuning
+- Respostas genéricas
+- Pode alucinar informações
+- Sem conhecimento de produtos específicos da Amazon
+- Criativo mas incorreto
+
+### Depois do Fine-Tuning (3.000 amostras)
+- ✅ Descrições de produtos no estilo Amazon
+- ✅ Melhor formatação e estrutura
+- ✅ Para de gerar perguntas de acompanhamento
+- ✅ Respostas mais focadas
+- ⚠️ Pode ainda alucinar para produtos não vistos (normal com treinamento limitado)
+
+### Depois do Fine-Tuning Completo (131K amostras)
+- ✅ Conhecimento abrangente de produtos
+- ✅ Melhor recall de produtos específicos
+- ✅ Descrições mais precisas
+- ✅ Qualidade pronta para produção
+
+---
+
+## 🛠️ Estrutura do Projeto
 
 ```
 FIAP-fase-3-fine-tunning/
 ├── data/
-│   └── trn.json                 # Amazon dataset (131,262 products)
+│   └── trn.json                 # Dataset Amazon (131.262 produtos)
 ├── models/
-│   └── gemma-2b-finetuned/     # Fine-tuned LoRA adapters
-├── chroma_db/                   # Vector database for references
+│   └── gemma-2b-finetuned/     # Adaptadores LoRA fine-tunados
+├── chroma_db/                   # Banco de dados vetorial para referências
 ├── src/
-│   ├── streamlit_app.py        # Main UI application
-│   ├── model_utils.py          # Fine-tuning and inference logic
-│   ├── api_model_utils.py      # Model loading utilities
-│   └── rag_utils.py            # RAG system for references
+│   ├── streamlit_app.py        # Aplicação UI principal
+│   ├── model_utils.py          # Lógica de fine-tuning e inferência
+│   ├── api_model_utils.py      # Utilitários de carregamento de modelo
+│   └── rag_utils.py            # Sistema RAG para referências
 ├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## 🎬 Creating Your Demo Video
+## 🎬 Criando Seu Vídeo de Demonstração
 
-### What to Show (10 minutes max)
+### O Que Mostrar (máximo 10 minutos)
 
-1. **Introduction (1 min)**
-   - Explain the challenge: fine-tune Gemma on Amazon data
-   - Show the dataset preview
+1. **Introdução (1 min)**
+   - Explique o desafio: fine-tune do Gemma em dados da Amazon
+   - Mostre a prévia do dataset
 
-2. **Before Fine-Tuning (2 min)**
-   - Ask a question about a product
-   - Show the original model's generic/incorrect response
+2. **Antes do Fine-Tuning (2 min)**
+   - Faça uma pergunta sobre um produto
+   - Mostre a resposta genérica/incorreta do modelo original
 
-3. **Fine-Tuning Process (1 min)**
-   - Show the configuration (3,000 samples, 3 epochs)
-   - Explain LoRA parameters briefly
-   - (Skip the actual training - just show it started)
+3. **Processo de Fine-Tuning (1 min)**
+   - Mostre a configuração (3.000 amostras, 3 épocas)
+   - Explique brevemente os parâmetros LoRA
+   - (Pule o treinamento real - apenas mostre que iniciou)
 
-4. **After Fine-Tuning (3 min)**
-   - Ask the same question
-   - Show the improved, Amazon-style response
-   - Show the training references (proof of learning)
+4. **Depois do Fine-Tuning (3 min)**
+   - Faça a mesma pergunta
+   - Mostre a resposta melhorada, no estilo Amazon
+   - Mostre as referências de treinamento (prova de aprendizado)
 
-5. **Technical Explanation (2 min)**
-   - Explain LoRA and why it's efficient
-   - Show the training parameters used
-   - Mention scalability to full 131K dataset
+5. **Explicação Técnica (2 min)**
+   - Explique LoRA e por que é eficiente
+   - Mostre os parâmetros de treinamento usados
+   - Mencione escalabilidade para o dataset completo de 131K
 
-6. **Conclusion (1 min)**
-   - Summarize improvements
-   - Mention limitations (limited training data)
-   - Explain production path (full dataset training)
-
----
-
-## ⚠️ Important Notes
-
-### Limitations
-
-1. **Small training set (3,000)** won't memorize all products perfectly
-2. **Hallucination** may still occur for unseen products
-3. **LoRA r=8** is parameter-efficient but has limited capacity
-4. **Single model** (Gemma-2B) - not the largest available
-
-### These Are Normal!
-
-Fine-tuning 3,000 examples on a 2B model with r=8 LoRA is a **proof of concept**, not production deployment. The model learns:
-- ✅ The pattern of Amazon product Q&A
-- ✅ The style and format of descriptions
-- ✅ General product knowledge
-
-But won't perfectly memorize every product. That's expected and acceptable for a demo!
+6. **Conclusão (1 min)**
+   - Resuma as melhorias
+   - Mencione limitações (dados de treinamento limitados)
+   - Explique caminho para produção (treinamento com dataset completo)
 
 ---
 
-## 📚 References
+## ⚠️ Notas Importantes
+
+### Limitações
+
+1. **Conjunto de treinamento pequeno (3.000)** não memorizará perfeitamente todos os produtos
+2. **Alucinação** pode ainda ocorrer para produtos não vistos
+3. **LoRA r=8** é eficiente em parâmetros mas tem capacidade limitada
+4. **Modelo único** (Gemma-2B) - não é o maior disponível
+
+### Isso É Normal!
+
+Fazer fine-tuning de 3.000 exemplos em um modelo 2B com LoRA r=8 é uma **prova de conceito**, não implantação em produção. O modelo aprende:
+- ✅ O padrão de Q&A de produtos da Amazon
+- ✅ O estilo e formato das descrições
+- ✅ Conhecimento geral de produtos
+
+Mas não memorizará perfeitamente cada produto. Isso é esperado e aceitável para uma demo!
+
+---
+
+## 📚 Referências
 
 - **Dataset**: [AmazonTitles-1.3MM](https://drive.google.com/file/d/12zH4mL2RX8iSvH0VCNnd3QxO4DzuHWnK/view)
-- **Model**: [Google Gemma-2B](https://huggingface.co/google/gemma-2b)
-- **LoRA Paper**: [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
-- **PEFT Library**: [Hugging Face PEFT](https://github.com/huggingface/peft)
+- **Modelo**: [Google Gemma-2B](https://huggingface.co/google/gemma-2b)
+- **Paper LoRA**: [LoRA: Low-Rank Adaptation of Large Language Models](https://arxiv.org/abs/2106.09685)
+- **Biblioteca PEFT**: [Hugging Face PEFT](https://github.com/huggingface/peft)
 
 ---
 
-## 🤝 Tech Challenge Compliance
+## 🤝 Conformidade com o Tech Challenge
 
-✅ **Fine-tuning execution**: LoRA-based PEFT on Gemma-2B  
-✅ **Dataset preparation**: Amazon product titles + descriptions  
-✅ **Before/After comparison**: Streamlit UI shows both  
-✅ **Training documentation**: This README + code comments  
-✅ **References/Sources**: ChromaDB-based RAG system  
-✅ **Video demonstration**: 10-minute walkthrough  
-
----
-
-## 💡 Tips for Success
-
-1. **Start training tonight** with default settings (3,000 samples, 3 epochs)
-2. **Let it run overnight** (~8-10 hours)
-3. **Test in the morning** - try various product queries
-4. **Record your demo** showing before/after comparison
-5. **Be honest about limitations** in your video
-
-**The goal is demonstrating fine-tuning works, not achieving perfection!** ✨
+✅ **Execução de fine-tuning**: PEFT baseado em LoRA no Gemma-2B  
+✅ **Preparação do dataset**: Títulos + descrições de produtos da Amazon  
+✅ **Comparação antes/depois**: UI Streamlit mostra ambos  
+✅ **Documentação de treinamento**: Este README + comentários no código  
+✅ **Referências/Fontes**: Sistema RAG baseado em ChromaDB  
+✅ **Demonstração em vídeo**: Walkthrough de 10 minutos  
 
 ---
-
-## 📞 Support
-
-For questions about the Tech Challenge, use the FIAP Discord channel.
-
----
-
-**Good luck with your demo! 🚀**
-
