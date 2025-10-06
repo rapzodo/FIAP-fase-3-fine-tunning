@@ -103,12 +103,12 @@ def setup_lora_model(model):
     """Configure the model for Parameter-Efficient Fine-Tuning with LoRA"""
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
-        inference_mode=False,
         r=8,
-        lora_alpha=32,
-        lora_dropout=0.1,
         target_modules=["q_proj", "o_proj", "k_proj", "v_proj",
-                        "gate_proj", "up_proj", "down_proj"]
+                        "gate_proj", "up_proj", "down_proj"],
+        inference_mode=False,
+        lora_alpha=32,
+        lora_dropout=0.1
     )
 
     if hasattr(model, 'is_quantized') and model.is_quantized:
@@ -119,13 +119,18 @@ def setup_lora_model(model):
 
 # Prepare dataset for training
 def prepare_dataset(data):
-    """Prepare dataset for fine-tuning"""
+    """Prepare dataset for fine-tuning - direct title to description mapping"""
     formatted_data = []
 
     for item in data:
-        prompt = f"Given the product title, provide a detailed description of the product.\n\nProduct: {item['input']}\n\nDescription:"
-        response = item['output']
-        formatted_text = f"{prompt} {response}"
+        title = item['input']
+        description = item['output']
+
+        if not description or not description.strip():
+            continue
+
+        # Simple, direct format - teach the model to map titles to descriptions
+        formatted_text = f"Question: What is {title}?\n\nAnswer: {description}<|end|>"
         formatted_data.append({"text": formatted_text})
 
     return Dataset.from_list(formatted_data)
@@ -189,12 +194,34 @@ def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=1, batch_size=
 
 # Generate response using the model
 def generate_response(model, tokenizer, query):
-    """Generate a product description from a title"""
-    prompt = f"Given the user question, provide a detailed description of the product.\n\nQuery: {query}\n\nDescription:"
-    inputs = tokenizer(prompt, return_tensors="pt")
-    outputs = model.generate(**inputs, max_new_tokens=20)
+    """Generate an answer based on fine-tuned knowledge"""
+    # More explicit prompt that encourages factual recall
+    prompt = f"Based on the Amazon product database, answer the following question with factual information only.\n\nQuestion: {query}\n\nAnswer:"
+
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=150,
+        temperature=0.01,  # Nearly deterministic for maximum factuality
+        do_sample=False,  # Pure greedy decoding - no randomness
+        num_beams=1,
+        pad_token_id=tokenizer.pad_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+    )
+
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    return response.replace(prompt,"")
+    response = response.replace(prompt, "").strip()
+
+    stop_strings = ["<|end|>", "Question:", "\n\nQuestion", "\n\nBased on"]
+    for stop_str in stop_strings:
+        if stop_str in response:
+            response = response.split(stop_str)[0].strip()
+
+    return response
 
 # Load Amazon dataset
 def load_amazon_dataset(file_path, max_samples=None):
@@ -202,7 +229,7 @@ def load_amazon_dataset(file_path, max_samples=None):
     data = []
     with open(file_path, 'r', encoding='utf-8') as f:
         for line in f:
-            if line.strip():  # Skip empty lines
+            if line.strip():
                 try:
                     item = json.loads(line.strip())
                     if 'title' in item and 'content' in item:
@@ -211,17 +238,10 @@ def load_amazon_dataset(file_path, max_samples=None):
                             "output": item['content']
                         })
                 except json.JSONDecodeError:
-                    continue  # Skip lines that can't be parsed
+                    continue
 
-            # Apply max_samples limit if specified
             if max_samples and len(data) >= max_samples:
                 break
 
     return data
 
-# Save preprocessed data
-def save_preprocessed_data(data, output_path):
-    """Save preprocessed data to a JSON file"""
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(data, f, indent=2)
