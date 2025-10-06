@@ -43,33 +43,26 @@ def main():
     st.title("Fine-Tuning Gemma Model for Product Descriptions")
     st.markdown("This application demonstrates fine-tuning of the Gemma-2B model to generate better product descriptions based on product titles.")
 
-    # Sidebar for configuration
     st.sidebar.header("Configuration")
 
-    # Hugging Face authentication
     hf_token = st.sidebar.text_input("Hugging Face Token", type="password", help="Required for Gemma model access. Get your token at https://huggingface.co/settings/tokens")
     if hf_token:
         os.environ["HUGGING_FACE_HUB_TOKEN"] = hf_token
 
-    # Model selection - using only Gemma model
-    model_path = "google/gemma-2b"  # Direct path to the Gemma model
+    model_path = "google/gemma-2b"
 
-    # Dataset configuration
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     data_path = os.path.join(base_dir, "data", "trn.json")
     st.sidebar.subheader("Dataset Configuration")
-    max_samples = st.sidebar.slider("Maximum samples for training", 100, 10000, 3000)  # Default 3000 for overnight
+    max_samples = st.sidebar.slider("Maximum samples for training", 100, 10000, 3000)
 
-    # Fine-tuning configuration
     st.sidebar.subheader("Fine-tuning Configuration")
-    epochs = st.sidebar.slider("Number of epochs", 1, 10, 3)  # Default 3 epochs
+    epochs = st.sidebar.slider("Number of epochs", 1, 10, 3)
     batch_size = st.sidebar.slider("Batch size", 1, 8, 2)
     output_dir = os.path.join(base_dir, "models", "gemma-2b-finetuned")
 
-    # Main content area with tabs
     tabs = st.tabs(["Compare Before/After Fine-tuning", "Dataset Preview", "Fine-tuning Process"])
 
-    # Tab 1: Compare Before/After Fine-tuning
     with tabs[0]:
         st.header("Compare Model Results Before & After Fine-tuning")
 
@@ -117,7 +110,6 @@ def main():
                             st.markdown("### Generated Description:")
                             st.write(response)
 
-                        # Show references (for transparency, not for generation)
                         with st.spinner("Finding similar products from training data..."):
                             rag = get_rag_instance(db_path=os.path.join(base_dir, "chroma_db"))
                             references = rag.find_relevant_references(query, top_k=3)
@@ -139,7 +131,6 @@ def main():
                     except Exception as e:
                         st.error(f"Error loading or using the fine-tuned model: {str(e)}")
 
-    # Tab 2: Dataset Preview
     with tabs[1]:
         st.header("Amazon Dataset Preview")
 
@@ -164,7 +155,6 @@ def main():
         else:
             st.error(f"Dataset file not found: {data_path}")
 
-    # Tab 3: Fine-tuning Process
     with tabs[2]:
         st.header("Run Fine-tuning Process")
         st.info("This tab allows you to fine-tune the Gemma-2B model on Amazon product data.")
@@ -186,7 +176,6 @@ def main():
         with col2:
             st.subheader("Execute Fine-tuning")
             if st.button("Start Fine-tuning Process", use_container_width=True, disabled=button_disabled):
-                # Delete existing fine-tuned model if it exists
                 if check_model_exists(output_dir):
                     with st.spinner("Deleting existing fine-tuned model..."):
                         if delete_fine_tuned_model(output_dir):
