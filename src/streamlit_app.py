@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 
 import streamlit as st
 import torch
@@ -40,7 +41,7 @@ def delete_fine_tuned_model(model_dir):
 
 def main():
     st.set_page_config(page_title="Fine-Tuning Foundation Models - Tech Challenge", layout="wide")
-    st.title("Fine-Tuning Gemma Model for Product Descriptions")
+    st.title("Fine-Tuning Gemma Model for Amazon's Product Descriptions")
     st.markdown("This application demonstrates fine-tuning of the Gemma-2B model to generate better product descriptions based on product titles.")
 
     st.sidebar.header("Configuration")
@@ -139,6 +140,29 @@ def main():
                 preview_data = load_amazon_dataset(data_path, max_samples=10)
 
             st.info(f"Showing {len(preview_data)} samples from the dataset")
+
+            # Add raw record example
+            st.subheader("📋 Raw Record Example")
+            
+            with st.expander("View raw JSON format from trn.json file", expanded=False):
+                st.markdown("Here's an example of the raw JSON format from the `trn.json` file:")
+                
+                try:
+                    with open(data_path, 'r', encoding='utf-8') as f:
+                        for line in f:
+                            if line.strip():
+                                try:
+                                    raw_record = json.loads(line.strip())
+                                    if 'title' in raw_record and 'content' in raw_record:
+                                        st.code(json.dumps(raw_record, indent=2, ensure_ascii=False), language='json')
+                                        break
+                                except json.JSONDecodeError:
+                                    continue
+                except Exception as e:
+                    st.error(f"Could not load raw record example: {str(e)}")
+
+            st.markdown("---")
+            st.subheader("📊 Processed Data Samples")
 
             valid_samples = [item for item in preview_data if item['output']]
             empty_samples = len(preview_data) - len(valid_samples)
