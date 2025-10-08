@@ -326,79 +326,79 @@ Mas não memorizará perfeitamente cada produto. Isso é esperado e aceitável p
 
 # FIAP Fase 3 - Fine-Tuning
 
-## Training Metrics
+## Métricas de Treinamento
 
-### Training Run 1
-Training on device: **mps**
+### Execução de Treinamento 1
+Treinamento no dispositivo: **mps**
 
-| Epoch | Loss   | Grad Norm | Learning Rate | Progress |
-|-------|--------|-----------|---------------|----------|
-| 0.21  | 2.5886 | 1.1109    | 1.588e-04     | 21%      |
-| 0.41  | 2.2692 | 0.8210    | 1.175e-04     | 41%      |
-| 0.62  | 2.1900 | 0.7782    | 7.629e-05     | 62%      |
-| 0.82  | 2.1828 | 0.7936    | 3.505e-05     | 82%      |
+| Época | Perda  | Grad Norm | Taxa de Aprendizado | Progresso |
+|-------|--------|-----------|---------------------|-----------|
+| 0.21  | 2.5886 | 1.1109    | 1.588e-04          | 21%       |
+| 0.41  | 2.2692 | 0.8210    | 1.175e-04          | 41%       |
+| 0.62  | 2.1900 | 0.7782    | 7.629e-05          | 62%       |
+| 0.82  | 2.1828 | 0.7936    | 3.505e-05          | 82%       |
 
-**Final Results:**
-- Train Runtime: 11,035.14 seconds (~3.07 hours)
-- Train Samples/Second: 0.141
-- Train Steps/Second: 0.009
-- **Train Loss: 2.2861**
-- Epoch: 1.0
-- Progress: 97/97 steps [3:03:55, 113.76s/it]
-
----
-
-### Training Run 2
-Training on device: **mps**
-
-| Epoch | Loss   | Grad Norm | Learning Rate | Progress |
-|-------|--------|-----------|---------------|----------|
-| 0.21  | 2.0918 | 1.4704    | 1.588e-04     | 21%      |
-| 0.41  | 2.0522 | 1.0595    | 1.175e-04     | 41%      |
-| 0.62  | 2.0543 | 1.1621    | 7.629e-05     | 62%      |
-| 0.82  | 2.0914 | 1.0780    | 3.505e-05     | 82%      |
-
-**Final Results:**
-- Train Runtime: 9,256.10 seconds (~2.57 hours)
-- Train Samples/Second: 0.168
-- Train Steps/Second: 0.010
-- **Train Loss: 2.0850**
-- Epoch: 1.0
-- Progress: 97/97 steps [2:34:15, 74.70s/it]
+**Resultados Finais:**
+- Tempo de Execução: 11.035,14 segundos (~3,07 horas)
+- Amostras/Segundo: 0,141
+- Passos/Segundo: 0,009
+- **Perda de Treinamento: 2.2861**
+- Época: 1.0
+- Progresso: 97/97 passos [3:03:55, 113.76s/it]
 
 ---
 
-### Training Run 3
-Training on device: **mps**
+### Execução de Treinamento 2
+Treinamento no dispositivo: **mps**
 
-| Epoch | Loss   | Grad Norm | Learning Rate | Progress |
-|-------|--------|-----------|---------------|----------|
-| 0.21  | 1.7809 | 1.8225    | 1.588e-04     | 21%      |
-| 0.41  | 1.8435 | 1.5930    | 1.175e-04     | 41%      |
-| 0.62  | 1.9163 | 1.6183    | 7.629e-05     | 62%      |
-| 0.82  | 2.0279 | 1.5027    | 3.505e-05     | 82%      |
+| Época | Perda  | Grad Norm | Taxa de Aprendizado | Progresso |
+|-------|--------|-----------|---------------------|-----------|
+| 0.21  | 2.0918 | 1.4704    | 1.588e-04          | 21%       |
+| 0.41  | 2.0522 | 1.0595    | 1.175e-04          | 41%       |
+| 0.62  | 2.0543 | 1.1621    | 7.629e-05          | 62%       |
+| 0.82  | 2.0914 | 1.0780    | 3.505e-05          | 82%       |
 
-**Final Results:**
-- Train Runtime: 8,246.88 seconds (~2.29 hours)
-- Train Samples/Second: 0.188
-- Train Steps/Second: 0.012
-- **Train Loss: 1.9352**
-- Epoch: 1.0
-- Progress: 97/97 steps [2:17:26, 85.02s/it]
+**Resultados Finais:**
+- Tempo de Execução: 9.256,10 segundos (~2,57 horas)
+- Amostras/Segundo: 0,168
+- Passos/Segundo: 0,010
+- **Perda de Treinamento: 2.0850**
+- Época: 1.0
+- Progresso: 97/97 passos [2:34:15, 74.70s/it]
 
 ---
 
-## Training Summary
+### Execução de Treinamento 3
+Treinamento no dispositivo: **mps**
 
-### Loss Progress Across Runs
-- **Run 1:** 2.2861 → **Run 2:** 2.0850 → **Run 3:** 1.9352
-- **Total Improvement:** 15.3% reduction in loss
+| Época | Perda  | Grad Norm | Taxa de Aprendizado | Progresso |
+|-------|--------|-----------|---------------------|-----------|
+| 0.21  | 1.7809 | 1.8225    | 1.588e-04          | 21%       |
+| 0.41  | 1.8435 | 1.5930    | 1.175e-04          | 41%       |
+| 0.62  | 1.9163 | 1.6183    | 7.629e-05          | 62%       |
+| 0.82  | 2.0279 | 1.5027    | 3.505e-05          | 82%       |
 
-### Performance Improvements
-- Training speed improved from 0.141 to 0.188 samples/second (33% faster)
-- Runtime decreased from ~3.07 hours to ~2.29 hours per epoch
+**Resultados Finais:**
+- Tempo de Execução: 8.246,88 segundos (~2,29 horas)
+- Amostras/Segundo: 0,188
+- Passos/Segundo: 0,012
+- **Perda de Treinamento: 1.9352**
+- Época: 1.0
+- Progresso: 97/97 passos [2:17:26, 85.02s/it]
 
-### Key Observations
-- Consistent loss reduction across all three training runs
-- Model shows continuous learning improvement
-- Training efficiency improved with each iteration
+---
+
+## Resumo do Treinamento
+
+### Progresso da Perda ao Longo das Execuções
+- **Execução 1:** 2.2861 → **Execução 2:** 2.0850 → **Execução 3:** 1.9352
+- **Melhoria Total:** Redução de 15,3% na perda
+
+### Melhorias de Performance
+- Velocidade de treinamento melhorou de 0,141 para 0,188 amostras/segundo (33% mais rápido)
+- Tempo de execução diminuiu de ~3,07 horas para ~2,29 horas por época
+
+### Observações Principais
+- Redução consistente da perda ao longo das três execuções de treinamento
+- Modelo demonstra melhoria contínua no aprendizado
+- Eficiência do treinamento melhorou a cada iteração
