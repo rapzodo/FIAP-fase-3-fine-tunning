@@ -323,3 +323,82 @@ Mas não memorizará perfeitamente cada produto. Isso é esperado e aceitável p
 ✅ **Demonstração em vídeo**: Walkthrough de 10 minutos  
 
 ---
+
+# FIAP Fase 3 - Fine-Tuning
+
+## Training Metrics
+
+### Training Run 1
+Training on device: **mps**
+
+| Epoch | Loss   | Grad Norm | Learning Rate | Progress |
+|-------|--------|-----------|---------------|----------|
+| 0.21  | 2.5886 | 1.1109    | 1.588e-04     | 21%      |
+| 0.41  | 2.2692 | 0.8210    | 1.175e-04     | 41%      |
+| 0.62  | 2.1900 | 0.7782    | 7.629e-05     | 62%      |
+| 0.82  | 2.1828 | 0.7936    | 3.505e-05     | 82%      |
+
+**Final Results:**
+- Train Runtime: 11,035.14 seconds (~3.07 hours)
+- Train Samples/Second: 0.141
+- Train Steps/Second: 0.009
+- **Train Loss: 2.2861**
+- Epoch: 1.0
+- Progress: 97/97 steps [3:03:55, 113.76s/it]
+
+---
+
+### Training Run 2
+Training on device: **mps**
+
+| Epoch | Loss   | Grad Norm | Learning Rate | Progress |
+|-------|--------|-----------|---------------|----------|
+| 0.21  | 2.0918 | 1.4704    | 1.588e-04     | 21%      |
+| 0.41  | 2.0522 | 1.0595    | 1.175e-04     | 41%      |
+| 0.62  | 2.0543 | 1.1621    | 7.629e-05     | 62%      |
+| 0.82  | 2.0914 | 1.0780    | 3.505e-05     | 82%      |
+
+**Final Results:**
+- Train Runtime: 9,256.10 seconds (~2.57 hours)
+- Train Samples/Second: 0.168
+- Train Steps/Second: 0.010
+- **Train Loss: 2.0850**
+- Epoch: 1.0
+- Progress: 97/97 steps [2:34:15, 74.70s/it]
+
+---
+
+### Training Run 3
+Training on device: **mps**
+
+| Epoch | Loss   | Grad Norm | Learning Rate | Progress |
+|-------|--------|-----------|---------------|----------|
+| 0.21  | 1.7809 | 1.8225    | 1.588e-04     | 21%      |
+| 0.41  | 1.8435 | 1.5930    | 1.175e-04     | 41%      |
+| 0.62  | 1.9163 | 1.6183    | 7.629e-05     | 62%      |
+| 0.82  | 2.0279 | 1.5027    | 3.505e-05     | 82%      |
+
+**Final Results:**
+- Train Runtime: 8,246.88 seconds (~2.29 hours)
+- Train Samples/Second: 0.188
+- Train Steps/Second: 0.012
+- **Train Loss: 1.9352**
+- Epoch: 1.0
+- Progress: 97/97 steps [2:17:26, 85.02s/it]
+
+---
+
+## Training Summary
+
+### Loss Progress Across Runs
+- **Run 1:** 2.2861 → **Run 2:** 2.0850 → **Run 3:** 1.9352
+- **Total Improvement:** 15.3% reduction in loss
+
+### Performance Improvements
+- Training speed improved from 0.141 to 0.188 samples/second (33% faster)
+- Runtime decreased from ~3.07 hours to ~2.29 hours per epoch
+
+### Key Observations
+- Consistent loss reduction across all three training runs
+- Model shows continuous learning improvement
+- Training efficiency improved with each iteration
