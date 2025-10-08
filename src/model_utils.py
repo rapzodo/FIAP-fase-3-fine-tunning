@@ -17,7 +17,76 @@ from transformers import (
     Trainer,
     DataCollatorForLanguageModeling
 )
+from langchain_core.prompts import PromptTemplate
+from langchain_core.language_models.llms import BaseLLM
+from langchain_core.outputs import Generation, LLMResult
+from typing import Any, List, Optional
+from langchain_core.callbacks.manager import CallbackManagerForLLMRun
+from pydantic import Field, ConfigDict
 
+
+class CustomHuggingFaceLLM(BaseLLM):
+    """Custom LLM wrapper for HuggingFace models that bypasses Pydantic validation issues."""
+
+    pipeline: Any = Field(default=None, exclude=True)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def __init__(self, model: Any, tokenizer: Any, **kwargs):
+        super().__init__(**kwargs)
+        self.pipeline = {"model": model, "tokenizer": tokenizer}
+
+    @property
+    def _llm_type(self) -> str:
+        return "custom_huggingface"
+
+    def _generate(
+        self,
+        prompts: List[str],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> LLMResult:
+        generations = []
+        for prompt in prompts:
+            text = self._call_model(prompt)
+            generations.append([Generation(text=text)])
+        return LLMResult(generations=generations)
+
+    def _call(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> str:
+        return self._call_model(prompt)
+
+    def _call_model(self, prompt: str) -> str:
+        model = self.pipeline["model"]
+        tokenizer = self.pipeline["tokenizer"]
+
+        device = next(model.parameters()).device
+        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+
+        outputs = model.generate(
+            **inputs,
+            max_new_tokens=150,
+            temperature=0.7,
+            do_sample=True,
+            top_p=0.9,
+            top_k=50,
+            num_beams=1,
+            repetition_penalty=1.2,
+            pad_token_id=tokenizer.pad_token_id,
+            eos_token_id=tokenizer.eos_token_id,
+        )
+
+        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        response = response.replace(prompt, "").strip()
+
+        return response
 
 def can_use_quantization():
     """Check if accelerate library is available and if CUDA is available for quantization"""
@@ -27,12 +96,10 @@ def can_use_quantization():
     except ImportError:
         has_accelerate = False
 
-    # Check if all requirements are met for quantization
     return has_accelerate and torch.cuda.is_available()
 
 def load_model_and_tokenizer(model_name, device_map="cpu", quantization=True):
     """Load the foundation model and tokenizer"""
-    # Get token from environment variable (set by the Streamlit app)
     hf_token = os.environ.get("HUGGING_FACE_HUB_TOKEN", None)
 
     if quantization and can_use_quantization:
@@ -86,11 +153,9 @@ def standard_model_load(device_map, hf_token, model_name):
 def prepare_model_for_training(model):
     """Prepare model for training by moving parameters from meta device to actual device"""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    # Unwrap DDP model if needed
     if hasattr(model, "module"):
         model = model.module
 
-    # Move model parameters from meta device if needed
     for param in model.parameters():
         if hasattr(param, "device") and param.device.type == 'meta':
             param.data = param.data.to(device)
@@ -98,7 +163,6 @@ def prepare_model_for_training(model):
     return model
 
 
-# Setup LoRA for efficient fine-tuning
 def setup_lora_model(model):
     """Configure the model for Parameter-Efficient Fine-Tuning with LoRA"""
     peft_config = LoraConfig(
@@ -117,7 +181,6 @@ def setup_lora_model(model):
     lora_model = get_peft_model(model, peft_config)
     return lora_model
 
-# Prepare dataset for training
 def prepare_dataset(data):
     """Prepare dataset for fine-tuning - direct title to description mapping"""
     formatted_data = []
@@ -129,39 +192,32 @@ def prepare_dataset(data):
         if not description or not description.strip():
             continue
 
-        # Simple, direct format - teach the model to map titles to descriptions
-        formatted_text = f"Question: What is {title}?\n\nAnswer: {description}<|end|>"
+        formatted_text = f"Given the user query about the following product {title} respond with the following description:\n\nDescription: {description}<|end|>"
         formatted_data.append({"text": formatted_text})
 
     return Dataset.from_list(formatted_data)
 
-# Fine-tune model
 def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=1, batch_size=2):
     """Fine-tune the model using the prepared dataset"""
-    # Check if MPS (Metal Performance Shaders) is available for Apple Silicon
     use_mps = hasattr(torch, 'mps') and torch.backends.mps.is_available()
     device = "mps" if use_mps else "cpu"
     print(f"Training on device: {device}")
 
-    # Prepare model by moving parameters from meta device if needed
     model = prepare_model_for_training(model)
-
-    # Move model to the appropriate device
     model.to(device)
 
-    # Configure training arguments optimized for Apple M4 Pro
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=epochs,
         per_device_train_batch_size=batch_size,
-        gradient_accumulation_steps=8,  # Increased for memory efficiency
+        gradient_accumulation_steps=8,
         optim="adamw_torch",
         learning_rate=2e-4,
         weight_decay=0.01,
-        fp16=False,  # Disable fp16 for Apple Silicon
+        fp16=False,
         logging_steps=20,
         save_strategy="epoch",
-        evaluation_strategy="no",  # Disable evaluation to speed up training
+        evaluation_strategy="no",
         save_total_limit=1,
         load_best_model_at_end=False,
         report_to=None
@@ -173,7 +229,7 @@ def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=1, batch_size=
     )
 
     def tokenize_function(examples):
-        return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=256)  # Reduced length for memory efficiency
+        return tokenizer(examples["text"], padding="max_length", truncation=True, max_length=256)
 
     tokenized_dataset = dataset.map(tokenize_function, batched=True)
 
@@ -192,38 +248,35 @@ def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=1, batch_size=
 
     return model, tokenizer
 
-# Generate response using the model
 def generate_response(model, tokenizer, query):
-    """Generate an answer based on fine-tuned knowledge"""
-    # More explicit prompt that encourages factual recall
-    prompt = f"Based on the Amazon product database, answer the following question with factual information only.\n\nQuestion: {query}\n\nAnswer:"
+    """Generate an answer based on fine-tuned knowledge using LangChain"""
+    llm = CustomHuggingFaceLLM(model=model, tokenizer=tokenizer)
 
-    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
+    prompt_template = PromptTemplate.from_template("Given the user query about the following product {query} respond with the following description:\n\nDescription:<|end|>")
 
-    device = next(model.parameters()).device
-    inputs = {k: v.to(device) for k, v in inputs.items()}
+    chain = prompt_template | llm
 
-    outputs = model.generate(
-        **inputs,
-        max_new_tokens=150,
-        temperature=0.01,  # Nearly deterministic for maximum factuality
-        do_sample=False,  # Pure greedy decoding - no randomness
-        num_beams=1,
-        pad_token_id=tokenizer.pad_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-    )
+    response = chain.invoke({"query": query})
 
-    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    response = response.replace(prompt, "").strip()
-
-    stop_strings = ["<|end|>", "Question:", "\n\nQuestion", "\n\nBased on"]
-    for stop_str in stop_strings:
-        if stop_str in response:
-            response = response.split(stop_str)[0].strip()
+    # # Extract only the answer portion after "Answer:"
+    # if "Answer:" in response:
+    #     response = response.split("Answer:")[-1].strip()
+    #
+    # # Remove the original query if it appears in the response
+    # if query in response:
+    #     response = response.replace(query, "").strip()
+    #
+    # # Clean up the response by removing stop sequences and step markers
+    # for stop_str in ["<|end|>", "Question:", "\n\nQuestion", "\n\n", "Step 1", "Step 2", "Finally,"]:
+    #     if stop_str in response:
+    #         response = response.split(stop_str)[0].strip()
+    #
+    # # If response is empty or just the title, return a message
+    # if not response or response == query:
+    #     response = "No detailed description available for this product."
 
     return response
 
-# Load Amazon dataset
 def load_amazon_dataset(file_path, max_samples=None):
     """Load data from trn.json file which is in JSON Lines format"""
     data = []
@@ -242,6 +295,4 @@ def load_amazon_dataset(file_path, max_samples=None):
 
             if max_samples and len(data) >= max_samples:
                 break
-
     return data
-
