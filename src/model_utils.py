@@ -17,76 +17,7 @@ from transformers import (
     Trainer,
     DataCollatorForLanguageModeling
 )
-from langchain_core.prompts import PromptTemplate
-from langchain_core.language_models.llms import BaseLLM
-from langchain_core.outputs import Generation, LLMResult
-from typing import Any, List, Optional
-from langchain_core.callbacks.manager import CallbackManagerForLLMRun
-from pydantic import Field, ConfigDict
 
-
-class CustomHuggingFaceLLM(BaseLLM):
-    """Custom LLM wrapper for HuggingFace models that bypasses Pydantic validation issues."""
-
-    pipeline: Any = Field(default=None, exclude=True)
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    def __init__(self, model: Any, tokenizer: Any, **kwargs):
-        super().__init__(**kwargs)
-        self.pipeline = {"model": model, "tokenizer": tokenizer}
-
-    @property
-    def _llm_type(self) -> str:
-        return "custom_huggingface"
-
-    def _generate(
-        self,
-        prompts: List[str],
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> LLMResult:
-        generations = []
-        for prompt in prompts:
-            text = self._call_model(prompt)
-            generations.append([Generation(text=text)])
-        return LLMResult(generations=generations)
-
-    def _call(
-        self,
-        prompt: str,
-        stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
-        **kwargs: Any,
-    ) -> str:
-        return self._call_model(prompt)
-
-    def _call_model(self, prompt: str) -> str:
-        model = self.pipeline["model"]
-        tokenizer = self.pipeline["tokenizer"]
-
-        device = next(model.parameters()).device
-        inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
-        inputs = {k: v.to(device) for k, v in inputs.items()}
-
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=150,
-            temperature=0.7,
-            do_sample=True,
-            top_p=0.9,
-            top_k=50,
-            num_beams=1,
-            repetition_penalty=1.2,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-        )
-
-        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        response = response.replace(prompt, "").strip()
-
-        return response
 
 def can_use_quantization():
     """Check if accelerate library is available and if CUDA is available for quantization"""
@@ -249,31 +180,32 @@ def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=1, batch_size=
     return model, tokenizer
 
 def generate_response(model, tokenizer, query):
-    """Generate an answer based on fine-tuned knowledge using LangChain"""
-    llm = CustomHuggingFaceLLM(model=model, tokenizer=tokenizer)
+    """Generate an answer based on fine-tuned knowledge"""
+    # More explicit prompt that encourages factual recall
+    prompt = f"Based on the Amazon product database, answer the following question with factual information only.\n\nQuestion: {query}\n\nAnswer:"
 
-    prompt_template = PromptTemplate.from_template("Given the user query about the following product {query} respond with the following description:\n\nDescription:<|end|>")
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
 
-    chain = prompt_template | llm
+    device = next(model.parameters()).device
+    inputs = {k: v.to(device) for k, v in inputs.items()}
 
-    response = chain.invoke({"query": query})
+    outputs = model.generate(
+        **inputs,
+        max_new_tokens=150,
+        temperature=0.01,  # Nearly deterministic for maximum factuality
+        do_sample=False,  # Pure greedy decoding - no randomness
+        num_beams=1,
+        pad_token_id=tokenizer.pad_token_id,
+        eos_token_id=tokenizer.eos_token_id,
+    )
 
-    # # Extract only the answer portion after "Answer:"
-    # if "Answer:" in response:
-    #     response = response.split("Answer:")[-1].strip()
-    #
-    # # Remove the original query if it appears in the response
-    # if query in response:
-    #     response = response.replace(query, "").strip()
-    #
-    # # Clean up the response by removing stop sequences and step markers
-    # for stop_str in ["<|end|>", "Question:", "\n\nQuestion", "\n\n", "Step 1", "Step 2", "Finally,"]:
-    #     if stop_str in response:
-    #         response = response.split(stop_str)[0].strip()
-    #
-    # # If response is empty or just the title, return a message
-    # if not response or response == query:
-    #     response = "No detailed description available for this product."
+    response = tokenizer.decode(outputs[0], skip_special_tokens=True)
+    response = response.replace(prompt, "").strip()
+
+    stop_strings = ["<|end|>", "Question:", "\n\nQuestion", "\n\nBased on"]
+    for stop_str in stop_strings:
+        if stop_str in response:
+            response = response.split(stop_str)[0].strip()
 
     return response
 
