@@ -181,8 +181,7 @@ def fine_tune_model(model, tokenizer, dataset, output_dir, epochs=1, batch_size=
 
 def generate_response(model, tokenizer, query):
     """Generate an answer based on fine-tuned knowledge"""
-    # More explicit prompt that encourages factual recall
-    prompt = f"Based on the Amazon product database, answer the following question with factual information only.\n\nQuestion: {query}\n\nAnswer:"
+    prompt = f"Given the user query about the following product {query} respond with the following description:\n\nDescription:"
 
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512)
 
@@ -191,10 +190,11 @@ def generate_response(model, tokenizer, query):
 
     outputs = model.generate(
         **inputs,
-        max_new_tokens=150,
-        temperature=0.01,  # Nearly deterministic for maximum factuality
-        do_sample=False,  # Pure greedy decoding - no randomness
-        num_beams=1,
+        max_new_tokens=500,
+        temperature=0.1,
+        do_sample=False,
+        repetition_penalty=1.5,
+        no_repeat_ngram_size=3,
         pad_token_id=tokenizer.pad_token_id,
         eos_token_id=tokenizer.eos_token_id,
     )
@@ -202,7 +202,7 @@ def generate_response(model, tokenizer, query):
     response = tokenizer.decode(outputs[0], skip_special_tokens=True)
     response = response.replace(prompt, "").strip()
 
-    stop_strings = ["<|end|>", "Question:", "\n\nQuestion", "\n\nBased on"]
+    stop_strings = ["<|end|>", "Question:", "\n\nQuestion", "\n\nBased on", "Given the user"]
     for stop_str in stop_strings:
         if stop_str in response:
             response = response.split(stop_str)[0].strip()
